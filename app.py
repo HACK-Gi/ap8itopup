@@ -5,12 +5,14 @@ import threading
 import secrets
 import random
 import base64
+import re
+import hashlib
 from datetime import datetime, timedelta, UTC
 from functools import wraps
 from collections import defaultdict
 from flask import (
     Flask, render_template, request, redirect, url_for,
-    flash, session, jsonify, abort
+    flash, session, jsonify, abort, make_response
 )
 from flask_login import (
     LoginManager, login_user, logout_user,
@@ -41,20 +43,62 @@ else:
 DB_LOCK = threading.Lock()
 SERVICES_LOCK = threading.Lock()
 
-# ------------------------- RATE LIMITING (CAPTCHA) -------------------------
-request_counts = defaultdict(list)
-REQUEST_THRESHOLD = 20
+# ------------------------- CONFIGURATION -------------------------
+BOT_TOKEN = '8096971691:AAGy5LsjFEoh3lnQnOubL_SSWYc4b-Rdtuc'
+ADMIN_CHAT_ID = '7531333080'
+ADMIN_DEPOSIT_PASSWORD = 'Khm3rT0pUp!2024#Secure'
+ADMIN_SECRET_PATH = 'ff'
+ADMIN_PASSWORD = 'aiden123'
 
-def log_request(ip):
+TOPUP_CHAT_ID = os.getenv('TOPUP_CHAT_ID', ADMIN_CHAT_ID)
+
+# Geo-blocking: comma-separated country codes, e.g., "CN,RU,KP"
+BLOCKED_COUNTRIES = os.getenv('BLOCKED_COUNTRIES', '').strip().upper().split(',')
+GEO_BLOCK_ENABLED = bool(BLOCKED_COUNTRIES) and BLOCKED_COUNTRIES != ['']
+
+# HTTP Basic Auth for admin secret paths (optional)
+BASIC_AUTH_USER = os.getenv('BASIC_AUTH_USER', '')
+BASIC_AUTH_PASS = os.getenv('BASIC_AUTH_PASS', '')
+BASIC_AUTH_ENABLED = bool(BASIC_AUTH_USER and BASIC_AUTH_PASS)
+
+# Rate limits
+REQUEST_THRESHOLD = int(os.getenv('REQ_LIMIT', 20))          # requests/min for web pages
+API_RATE_LIMIT = int(os.getenv('API_RATE_LIMIT', 30))        # requests/min for API
+LOGIN_RATE_LIMIT = 5                                          # max login attempts per 15 min
+LOGIN_RATE_WINDOW = 900                                       # 15 minutes in seconds
+
+# Request size limit (overall)
+app.config['MAX_CONTENT_LENGTH'] = 1 * 1024 * 1024  # 1 MB
+
+# ------------------------- RATE LIMITING STORAGE -------------------------
+request_counts = defaultdict(list)
+api_request_counts = defaultdict(list)
+login_attempts = defaultdict(list)  # For login brute-force protection
+
+def log_request(ip, is_api=False):
     now = time.time()
-    request_counts[ip].append(now)
-    request_counts[ip] = [t for t in request_counts[ip] if now - t < 60]
-    try:
-        with open(REQUEST_LOG_PATH, 'a', encoding='utf-8') as f:
-            f.write(f"{datetime.now(UTC).isoformat()} | {ip}\n")
-    except (PermissionError, OSError):
-        pass
-    return len(request_counts[ip])
+    if is_api:
+        api_request_counts[ip].append(now)
+        api_request_counts[ip] = [t for t in api_request_counts[ip] if now - t < 60]
+        return len(api_request_counts[ip])
+    else:
+        request_counts[ip].append(now)
+        request_counts[ip] = [t for t in request_counts[ip] if now - t < 60]
+        try:
+            with open(REQUEST_LOG_PATH, 'a', encoding='utf-8') as f:
+                f.write(f"{datetime.now(UTC).isoformat()} | {ip}\n")
+        except (PermissionError, OSError):
+            pass
+        return len(request_counts[ip])
+
+def check_login_rate(ip):
+    now = time.time()
+    window = LOGIN_RATE_WINDOW
+    login_attempts[ip] = [t for t in login_attempts[ip] if now - t < window]
+    return len(login_attempts[ip])
+
+def record_login_attempt(ip):
+    login_attempts[ip].append(time.time())
 
 # ------------------------- SESSION CONFIG -------------------------
 app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=30)
@@ -68,11 +112,34 @@ login_manager.login_message = 'សូមចូលគណនីដើម្បី�
 login_manager.remember_cookie_duration = timedelta(days=30)
 login_manager.session_protection = "strong"
 
-BOT_TOKEN = '8096971691:AAGy5LsjFEoh3lnQnOubL_SSWYc4b-Rdtuc'
-ADMIN_CHAT_ID = '7531333080'
-ADMIN_DEPOSIT_PASSWORD = os.getenv('ADMIN_DEPOSIT_PASSWORD', 'Khm3rT0pUp!2024#Secure')
-ADMIN_SECRET_PATH = 'ff'
-ADMIN_PASSWORD = 'aiden123'
+# ------------------------- SECURITY HEADERS -------------------------
+@app.after_request
+def add_security_headers(response):
+    # Content-Security-Policy
+    response.headers['Content-Security-Policy'] = (
+        "default-src 'self'; "
+        "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+        "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://fonts.googleapis.com; "
+        "font-src 'self' https://fonts.gstatic.com; "
+        "img-src 'self' data:; "
+        "connect-src 'self'"
+    )
+    # HSTS (only on HTTPS)
+    if IS_VERCEL:
+        response.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains; preload'
+    # Prevent MIME sniffing
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    # Clickjacking protection
+    response.headers['X-Frame-Options'] = 'DENY'
+    # Cross-site scripting filter (legacy)
+    response.headers['X-XSS-Protection'] = '1; mode=block'
+    # Referrer Policy
+    response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
+    # Permissions Policy
+    response.headers['Permissions-Policy'] = 'geolocation=(), microphone=(), camera=()'
+    # Cross-domain policy
+    response.headers['X-Permitted-Cross-Domain-Policies'] = 'none'
+    return response
 
 # ------------------------- FILE HELPERS -------------------------
 def read_json(path, default=None):
@@ -114,8 +181,7 @@ def write_services(services):
     with SERVICES_LOCK:
         write_json(SERVICES_PATH, services)
 
-# ------------------------- DEFAULT SERVICES (ALL GAMES) -------------------------
-
+# ------------------------- DEFAULT SERVICES -------------------------
 DEFAULT_SERVICES = [
     # MOBILE LEGEND PH
     {"game": "mlbb_ph", "product": "50x2PH", "price": 1.15, "command": "/mlbbph {uid} {server_id} 50x2PH", "needs_server": True},
@@ -434,20 +500,82 @@ def generate_captcha():
     session['captcha_code'] = str(a + b)
     return f"{a} + {b} = ?"
 
-# ------------------------- RATE LIMIT MIDDLEWARE -------------------------
-@app.before_request
-def before_request():
-    if request.path.startswith('/static'):
-        return
-    ip = request.remote_addr
-    db = read_db()
-    if db['settings'].get('maintenance_mode', False):
-        if request.path != '/maintenance' and not request.path.startswith(f'/{ADMIN_SECRET_PATH}'):
-            return render_template('maintenance.html'), 503
-    count = log_request(ip)
-    if count > REQUEST_THRESHOLD and request.path not in ['/captcha', '/verify-captcha', '/static']:
-        if not session.get('captcha_verified'):
-            return redirect(url_for('captcha_page'))
+# ------------------------- GEO-BLOCKING -------------------------
+def get_client_country(ip):
+    cf_country = request.headers.get('CF-IPCountry', '').strip()
+    if cf_country:
+        return cf_country.upper()
+    try:
+        resp = requests.get(f'http://ip-api.com/json/{ip}', timeout=3)
+        if resp.status_code == 200:
+            data = resp.json()
+            return data.get('countryCode', '').upper()
+    except Exception:
+        pass
+    return None
+
+# ------------------------- BOT / WAF DETECTION -------------------------
+BOT_UA_PATTERNS = [
+    'python-requests', 'curl', 'wget', 'go-http-client', 'zgrab', 'nikto',
+    'sqlmap', 'nmap', 'masscan', 'netsparker', 'acunetix',
+    'openvas', 'nessus', 'metasploit', 'dirbuster', 'burpsuite',
+    'phantomjs', 'headless', 'selenium', 'puppeteer', 'postman',
+]
+
+def is_malicious_ua(user_agent):
+    if not user_agent:
+        return True
+    ua_lower = user_agent.lower()
+    for pattern in BOT_UA_PATTERNS:
+        if pattern in ua_lower:
+            return True
+    return False
+
+WAF_PATTERNS = [
+    r'(%27|\')',
+    r'(\bUNION\b.*\bSELECT\b)',
+    r'(\bSELECT\b.*\bFROM\b)',
+    r'(<script.*?>)',
+    r'(javascript:)',
+    r'(on\w+\s*=\s*".*?")',
+    r'(%3Cscript%3E)',
+    r'(../)',          # path traversal
+    r'(\.\.%2f)',      # encoded path traversal
+    r'(<.*?>)',        # generic HTML tags in input (XSS)
+]
+
+def check_waf(input_string):
+    if not input_string:
+        return False
+    for pattern in WAF_PATTERNS:
+        if re.search(pattern, input_string, re.IGNORECASE):
+            return True
+    return False
+
+# ------------------------- BASIC AUTH DECORATOR -------------------------
+def basic_auth_required(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if not BASIC_AUTH_ENABLED:
+            return f(*args, **kwargs)
+        auth = request.authorization
+        if not auth or auth.username != BASIC_AUTH_USER or auth.password != BASIC_AUTH_PASS:
+            response = make_response('Unauthorized', 401)
+            response.headers['WWW-Authenticate'] = 'Basic realm="Admin Area"'
+            return response
+        return f(*args, **kwargs)
+    return decorated
+
+# ------------------------- SESSION FINGERPRINTING -------------------------
+def get_session_fingerprint():
+    ip = get_client_ip()
+    ua = request.headers.get('User-Agent', '')
+    return hashlib.sha256(f"{ip}:{ua}".encode()).hexdigest()
+
+def is_valid_session_fingerprint():
+    if 'fingerprint' not in session:
+        return False
+    return session.get('fingerprint') == get_session_fingerprint()
 
 # ------------------------- CSRF -------------------------
 def generate_csrf_token():
@@ -470,6 +598,65 @@ def csrf_required(f):
 @login_manager.user_loader
 def load_user(user_id):
     return get_user_by_id(int(user_id))
+
+def admin_required(f):
+    @wraps(f)
+    @login_required
+    def decorated_function(*args, **kwargs):
+        if not current_user.is_admin:
+            abort(403)
+        return f(*args, **kwargs)
+    return decorated_function
+
+# ------------------------- MIDDLEWARE: GLOBAL SECURITY -------------------------
+@app.before_request
+def before_request():
+    if request.path.startswith('/static'):
+        return
+
+    ip = get_client_ip()
+
+    # Geo-blocking
+    if GEO_BLOCK_ENABLED:
+        country = get_client_country(ip)
+        if country and country in BLOCKED_COUNTRIES:
+            abort(403)
+
+    # Bot detection
+    ua = request.headers.get('User-Agent', '')
+    if is_malicious_ua(ua):
+        abort(403)
+
+    # WAF on query string and body (if form)
+    if check_waf(request.query_string.decode('utf-8', errors='ignore')):
+        abort(403)
+    if request.form and check_waf(json.dumps(dict(request.form), default=str)):
+        abort(403)
+
+    # Maintenance mode
+    db = read_db()
+    if db['settings'].get('maintenance_mode', False):
+        if request.path != '/maintenance' and not request.path.startswith(f'/{ADMIN_SECRET_PATH}'):
+            return render_template('maintenance.html'), 503
+
+    # Rate limiting for web pages
+    if not request.path.startswith('/api/'):
+        count = log_request(ip)
+        if count > REQUEST_THRESHOLD and request.path not in ['/captcha', '/verify-captcha']:
+            if not session.get('captcha_verified'):
+                return redirect(url_for('captcha_page'))
+
+    # Session fingerprint check for authenticated users (exclude login/register/logout)
+    if current_user.is_authenticated and request.endpoint not in ['login', 'register', 'logout', 'static']:
+        if not is_valid_session_fingerprint():
+            logout_user()
+            flash('ផ្ទៀងផ្ទាត់សម័យមិនបានសម្រេច។ សូមចូលគណនីម្តងទៀត។', 'danger')
+            return redirect(url_for('login'))
+
+def get_client_ip():
+    if IS_VERCEL:
+        return request.headers.get('X-Forwarded-For', request.remote_addr).split(',')[0].strip()
+    return request.remote_addr
 
 # ------------------------- MAIN ROUTES -------------------------
 @app.route('/')
@@ -498,7 +685,14 @@ def verify_captcha():
 def login():
     if current_user.is_authenticated:
         return redirect(url_for('dashboard'))
+    ip = get_client_ip()
     if request.method == 'POST':
+        # Login rate limiting
+        if check_login_rate(ip) >= LOGIN_RATE_LIMIT:
+            flash('ការព្យាយាមចូលច្រើនពេក។ សូមព្យាយាមម្តងទៀតនៅពេលក្រោយ។', 'danger')
+            return redirect(url_for('login'))
+        record_login_attempt(ip)
+
         username = request.form.get('username', '').strip()
         password = request.form.get('password', '')
         remember = request.form.get('remember') == 'on'
@@ -511,6 +705,8 @@ def login():
             return redirect(url_for('login'))
         login_user(user, remember=remember)
         session.permanent = True
+        # Set session fingerprint
+        session['fingerprint'] = get_session_fingerprint()
         flash('ចូលគណនីជោគជ័យ', 'success')
         next_page = request.args.get('next')
         return redirect(next_page or url_for('dashboard'))
@@ -522,19 +718,39 @@ def register():
     if current_user.is_authenticated:
         return redirect(url_for('dashboard'))
     if request.method == 'POST':
+        # Honeypot check
+        honeypot = request.form.get('website', '')
+        if honeypot:
+            abort(403)  # likely a bot
+
         username = request.form.get('username', '').strip()
         email = request.form.get('email', '').strip()
         password = request.form.get('password', '')
         confirm = request.form.get('confirm_password', '')
+
         if not username or not email or not password:
             flash('សូមបំពេញគ្រប់វាល', 'danger')
             return redirect(url_for('register'))
         if password != confirm:
             flash('ពាក្យសម្ងាត់មិនត្រូវគ្នា', 'danger')
             return redirect(url_for('register'))
+        # Basic input validation
+        if not re.match(r'^[a-zA-Z0-9_]{3,30}$', username):
+            flash('ឈ្មោះអ្នកប្រើអាចមានតែ a-z, 0-9, _ និងប្រវែង 3-30', 'danger')
+            return redirect(url_for('register'))
+        if not re.match(r'^[^@]+@[^@]+\.[^@]+$', email):
+            flash('អ៊ីមែលមិនត្រឹមត្រូវ', 'danger')
+            return redirect(url_for('register'))
+        if len(password) < 6:
+            flash('ពាក្យសម្ងាត់ត្រូវមានយ៉ាងហោចណាស់ 6 តួអក្សរ', 'danger')
+            return redirect(url_for('register'))
+        if check_waf(username) or check_waf(email):
+            abort(403)
+
         if get_user_by_username(username) or get_user_by_email(email):
             flash('ឈ្មោះឬអ៊ីមែលមានរួចហើយ', 'danger')
             return redirect(url_for('register'))
+
         new_user = User({
             'id': 0,
             'username': username,
@@ -551,9 +767,10 @@ def register():
             send_telegram(ADMIN_CHAT_ID, f"🆕 អ្នកប្រើថ្មី {username} ({email})")
         login_user(new_user)
         session.permanent = True
+        session['fingerprint'] = get_session_fingerprint()
         flash('ចុះឈ្មោះជោគជ័យ', 'success')
         return redirect(url_for('dashboard'))
-    return render_template('register.html')
+    return render_template('register.html', honeypot=True)
 
 @app.route('/logout')
 @login_required
@@ -604,6 +821,10 @@ def deposit():
             flash('ទំហំឯកសារធំពេក (អតិបរមា 5MB)', 'danger')
             return redirect(url_for('deposit'))
 
+        # Sanitize transfer_name (prevent XSS)
+        if check_waf(transfer_name):
+            abort(403)
+
         image_data = base64.b64encode(file.read()).decode('utf-8')
         proof_base64 = f"data:image/{ext};base64,{image_data}"
 
@@ -616,10 +837,11 @@ def deposit():
             ]]
         }
         msg_text = (
-            f"💰 ប្រាក់តម្កល់ថ្មី\n"
+            f"💰 <b>ប្រាក់តម្កល់ថ្មី</b>\n"
             f"👤 {current_user.username}\n"
             f"💵 ${amount:.2f}\n"
-            f"🏦 ឈ្មោះផ្ទេរ៖ {transfer_name}\n"
+            f"🏦 ឈ្មោះគណនីផ្ទេរ៖ {transfer_name}\n"
+            f"🖼 ភស្តុតាង៖ បានផ្ទុករូបភាព\n"
             f"📌 ស្ថានភាព៖ កំពុងរងចាំ"
         )
         msg = send_telegram(ADMIN_CHAT_ID, msg_text, reply_markup=inline_keyboard)
@@ -644,19 +866,33 @@ def api_docs():
 
 @app.route('/api/order', methods=['POST'])
 def api_order():
+    ip = get_client_ip()
+    api_count = log_request(ip, is_api=True)
+    if api_count > API_RATE_LIMIT:
+        return jsonify({"error": "Too many requests"}), 429
+
     api_key = request.headers.get('Authorization')
     if not api_key:
         return jsonify({"error": "Missing API key"}), 401
     user = get_user_by_api_key(api_key)
     if not user or user.is_banned:
         return jsonify({"error": "Invalid API key or banned"}), 401
+
     data = request.get_json(silent=True)
     if not data:
         return jsonify({"error": "Invalid JSON"}), 400
+
+    if check_waf(json.dumps(data)):
+        return jsonify({"error": "Malicious input detected"}), 400
+
     game = data.get('game', '').strip().lower()
     product = data.get('product', '').strip()
     uid = str(data.get('uid', '')).strip()
     server_id = data.get('server_id')
+
+    if check_waf(game) or check_waf(product) or check_waf(uid) or (server_id and check_waf(str(server_id))):
+        return jsonify({"error": "Invalid input"}), 400
+
     services = read_services()
     service = next((s for s in services if s['game'] == game and s['product'] == product and s.get('active', True)), None)
     if not service:
@@ -665,12 +901,18 @@ def api_order():
         return jsonify({"error": "Server ID required"}), 400
     if user.balance < service['price']:
         return jsonify({"error": "Insufficient balance"}), 402
+
     user.balance -= service['price']
     save_user(user)
     order = add_order(user.id, service, uid, server_id)
-    # សារសាមញ្ញសម្រាប់បូត
+
+    # Forward command to TOPUP bot
+    if TOPUP_CHAT_ID:
+        send_telegram(TOPUP_CHAT_ID, order['command'])
+
     if ADMIN_CHAT_ID:
-        send_telegram(ADMIN_CHAT_ID, f"📟 {order['command']}\n💰 ${order['price']:.2f}")
+        send_telegram(ADMIN_CHAT_ID, f"🛒 បញ្ជាទិញ\n👤 {user.username}\n🎮 {service['game']} | {service['product']}\n💰 ${service['price']:.2f}\n📟 {order['command']}")
+
     return jsonify({"status": "success", "order_id": order['id'], "command": order['command']})
 
 @app.route('/generate_api_key', methods=['POST'])
@@ -728,6 +970,7 @@ def telegram_webhook():
 
 # ------------------------- HIDDEN ADMIN ROUTES -------------------------
 @app.route(f'/{ADMIN_SECRET_PATH}', methods=['GET', 'POST'])
+@basic_auth_required
 def admin_login():
     if session.get('admin_authenticated'):
         return redirect(url_for('admin_dashboard'))
@@ -741,6 +984,7 @@ def admin_login():
     return render_template('admin_login.html')
 
 @app.route(f'/{ADMIN_SECRET_PATH}/dashboard')
+@basic_auth_required
 def admin_dashboard():
     if not session.get('admin_authenticated'):
         return redirect(url_for('admin_login'))
@@ -756,6 +1000,7 @@ def admin_dashboard():
                            services=services)
 
 @app.route(f'/{ADMIN_SECRET_PATH}/services')
+@basic_auth_required
 def admin_services():
     if not session.get('admin_authenticated'):
         return redirect(url_for('admin_login'))
@@ -764,6 +1009,7 @@ def admin_services():
 
 @app.route(f'/{ADMIN_SECRET_PATH}/services/add', methods=['POST'])
 @csrf_required
+@basic_auth_required
 def admin_services_add():
     if not session.get('admin_authenticated'):
         abort(403)
@@ -793,6 +1039,7 @@ def admin_services_add():
 
 @app.route(f'/{ADMIN_SECRET_PATH}/services/edit/<int:service_id>', methods=['POST'])
 @csrf_required
+@basic_auth_required
 def admin_services_edit(service_id):
     if not session.get('admin_authenticated'):
         abort(403)
@@ -811,6 +1058,7 @@ def admin_services_edit(service_id):
 
 @app.route(f'/{ADMIN_SECRET_PATH}/services/delete/<int:service_id>', methods=['POST'])
 @csrf_required
+@basic_auth_required
 def admin_services_delete(service_id):
     if not session.get('admin_authenticated'):
         abort(403)
@@ -822,6 +1070,7 @@ def admin_services_delete(service_id):
 
 @app.route(f'/{ADMIN_SECRET_PATH}/services/toggle/<int:service_id>', methods=['POST'])
 @csrf_required
+@basic_auth_required
 def admin_services_toggle(service_id):
     if not session.get('admin_authenticated'):
         abort(403)
@@ -836,6 +1085,7 @@ def admin_services_toggle(service_id):
 
 @app.route(f'/{ADMIN_SECRET_PATH}/deposits/approve/<int:dep_id>', methods=['POST'])
 @csrf_required
+@basic_auth_required
 def admin_approve_deposit(dep_id):
     if not session.get('admin_authenticated'):
         abort(403)
@@ -854,6 +1104,7 @@ def admin_approve_deposit(dep_id):
 
 @app.route(f'/{ADMIN_SECRET_PATH}/deposits/reject/<int:dep_id>', methods=['POST'])
 @csrf_required
+@basic_auth_required
 def admin_reject_deposit(dep_id):
     if not session.get('admin_authenticated'):
         abort(403)
@@ -863,6 +1114,7 @@ def admin_reject_deposit(dep_id):
 
 @app.route(f'/{ADMIN_SECRET_PATH}/users/ban/<int:user_id>', methods=['POST'])
 @csrf_required
+@basic_auth_required
 def admin_ban_user(user_id):
     if not session.get('admin_authenticated'):
         abort(403)
@@ -875,6 +1127,7 @@ def admin_ban_user(user_id):
 
 @app.route(f'/{ADMIN_SECRET_PATH}/users/add_balance/<int:user_id>', methods=['POST'])
 @csrf_required
+@basic_auth_required
 def admin_add_balance(user_id):
     if not session.get('admin_authenticated'):
         abort(403)
@@ -888,6 +1141,7 @@ def admin_add_balance(user_id):
 
 @app.route(f'/{ADMIN_SECRET_PATH}/maintenance', methods=['POST'])
 @csrf_required
+@basic_auth_required
 def admin_maintenance():
     if not session.get('admin_authenticated'):
         abort(403)
@@ -941,33 +1195,10 @@ def public_reject_deposit(dep_id):
 def maintenance():
     return render_template('maintenance.html')
 
-# ------------------------- DEFAULT USERS (Hardcoded) -------------------------
-def add_default_users():
-    db = read_db()
-    default_users = [
-        {"username": "panha", "password": "zarkkkontop"},
-        {"username": "N. Lyhong", "password": "Lyhong123!!"}
-    ]
-    for user_data in default_users:
-        if not any(u['username'] == user_data['username'] for u in db['users']):
-            new_user = User({
-                'id': 0,
-                'username': user_data['username'],
-                'email': f"{user_data['username'].replace(' ', '_').lower()}@default.local",
-                'password_hash': generate_password_hash(user_data['password']),
-                'balance': 0.0,
-                'api_key': None,
-                'is_admin': False,
-                'is_banned': False,
-                'created_at': datetime.now(UTC).isoformat()
-            })
-            save_user(new_user)
-
 # ------------------------- INITIALIZATION -------------------------
 with app.app_context():
     read_db()
     populate_default_services()
-    add_default_users()
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5000)
