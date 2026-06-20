@@ -50,7 +50,7 @@ ADMIN_DEPOSIT_PASSWORD = 'Khm3rT0pUp!2024#Secure'
 ADMIN_SECRET_PATH = 'ff'
 ADMIN_PASSWORD = 'aiden123'
 
-TOPUP_CHAT_ID = os.getenv('TOPUP_CHAT_ID', ADMIN_CHAT_ID)
+TOPUP_CHAT_ID = os.getenv('TOPUP_CHAT_ID',7531333080)
 
 # Geo-blocking: comma-separated country codes, e.g., "CN,RU,KP"
 BLOCKED_COUNTRIES = os.getenv('BLOCKED_COUNTRIES', '').strip().upper().split(',')
