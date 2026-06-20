@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}ឯកសារ API{% endblock %}
+{% block content %}
+<div class="card shadow">
+    <div class="card-body">
+        <h2>📚 របៀបប្រើ API</h2>
+        <p>ដើម្បីបញ្ជាទិញដោយស្វ័យប្រវត្តិ សូមប្រើ API Key របស់អ្នក។</p>
+        <h5>1. យក API Key</h5>
+        <p>ចូលទៅកាន់ <a href="{{ url_for('dashboard') }}">Dashboard</a> ហើយចុច "បង្កើត API Key"។</p>
+        <h5>2. Endpoint</h5>
+        <code>POST {{ request.host_url }}api/order</code>
+        <h5>3. Headers</h5>
+        <pre>Authorization: YOUR_API_KEY
+Content-Type: application/json</pre>
+        <h5>4. Body (JSON)</h5>
+        <pre>{
+  "game": "mlbb_ph",
+  "product": "50x2PH",
+  "uid": "123456789",
+  "server_id": "11345"
+}</pre>
+        <p><em>server_id គឺចាំបាច់សម្រាប់ហ្គេមដែលត្រូវការ។</em></p>
+        <h5>5. ឧទាហរណ៍ curl</h5>
+        <pre>curl -X POST {{ request.host_url }}api/order \
+  -H "Authorization: api_sk_xxxx" \
+  -H "Content-Type: application/json" \
+  -d '{"game":"hok","product":"16","uid":"123456"}'</pre>
+        <h5>6. Response ពេលជោគជ័យ</h5>
+        <pre>{
+  "status": "success",
+  "order_id": 5,
+  "command": "/hok 123456 16"
+}</pre>
+    </div>
+</div>
+{% endblock %}

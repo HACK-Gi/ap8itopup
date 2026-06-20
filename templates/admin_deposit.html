@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="km">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Deposit Confirmation</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body class="bg-light">
+    <div class="container mt-4">
+        <h2>📋 ការតម្កល់រងចាំ</h2>
+        <table class="table table-striped">
+            <thead><tr><th>ID</th><th>User ID</th><th>Amount</th><th>Date</th><th>Action</th></tr></thead>
+            <tbody>
+                {% for dep in deposits %}
+                <tr>
+                    <td>{{ dep.id }}</td>
+                    <td>{{ dep.user_id }}</td>
+                    <td>${{ "%.2f"|format(dep.amount) }}</td>
+                    <td>{{ dep.created_at[:10] }}</td>
+                    <td>
+                        <form method="POST" action="{{ url_for('public_approve_deposit', dep_id=dep.id) }}" style="display:inline">
+                            <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+                            <button class="btn btn-sm btn-success">Approve</button>
+                        </form>
+                        <form method="POST" action="{{ url_for('public_reject_deposit', dep_id=dep.id) }}" style="display:inline">
+                            <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+                            <button class="btn btn-sm btn-danger">Reject</button>
+                        </form>
+                    </td>
+                </tr>
+                {% else %}
+                <tr><td colspan="5">មិនមានការតម្កល់រងចាំ</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% with messages = get_flashed_messages(with_categories=true) %}
+          {% for category, message in messages %}
+            <div class="alert alert-{{ category }}">{{ message }}</div>
+          {% endfor %}
+        {% endwith %}
+    </div>
+</body>
+</html>

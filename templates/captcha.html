@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}ផ្ទៀងផ្ទាត់{% endblock %}
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-4">
+        <div class="card shadow">
+            <div class="card-body text-center">
+                <h4>ផ្ទៀងផ្ទាត់ថាអ្នកមិនមែនជាមនុស្សយន្ត</h4>
+                <p class="fs-5">សំណួរ៖ {{ question }}</p>
+                <form method="POST" action="{{ url_for('verify_captcha') }}">
+                    <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+                    <input type="text" name="answer" class="form-control mb-3" placeholder="ចម្លើយ" required>
+                    <button type="submit" class="btn btn-primary w-100">ផ្ទៀងផ្ទាត់</button>
+                </form>
+                {% with messages = get_flashed_messages(with_categories=true) %}
+                  {% for category, message in messages %}
+                    <div class="alert alert-{{ category }} mt-3">{{ message }}</div>
+                  {% endfor %}
+                {% endwith %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

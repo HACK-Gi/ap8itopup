@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}ដាក់ប្រាក់{% endblock %}
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-6">
+        <div class="card shadow">
+            <div class="card-body">
+                <h3 class="text-center mb-4">ដាក់ប្រាក់</h3>
+                <div class="alert alert-info">
+                    <strong>⚠️ សំខាន់៖</strong> សូមផ្ទេរប្រាក់មកគណនីខាងក្រោម រួចបំពេញទម្រង់ខាងក្រោមឲ្យបានត្រឹមត្រូវ។
+                    <br>ប្រសិនបើឈ្មោះគណនីដែលអ្នកបំពេញមិនត្រូវនឹងគណនីទទួល ការតម្កល់នឹងមិនត្រូវបានអនុម័តឡើយ។
+                </div>
+
+                <!-- 👉 រូប QR Code ទទួលប្រាក់របស់ហាង -->
+                <div class="text-center mb-3">
+                    <img src="https://i.imgur.com/your_qr_code.png" alt="QR Code ទទួលប្រាក់" class="img-thumbnail" style="max-width:250px;">
+                    <p class="mt-2 mb-0"><strong>គណនីទទួល៖</strong> TOPUP SHOP</p>
+                    <p><strong>ធនាគារ៖</strong> ABA / ACLEDA</p>
+                </div>
+
+                <form method="POST" enctype="multipart/form-data">
+                    <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+                    <div class="mb-3">
+                        <label>ចំនួនទឹកប្រាក់ (USD)</label>
+                        <input type="number" name="amount" step="0.01" min="0.01" class="form-control" required>
+                    </div>
+                    <div class="mb-3">
+                        <label>ឈ្មោះគណនីដែលអ្នកបានផ្ទេរពី (ឈ្មោះម្ចាស់គណនី)</label>
+                        <input type="text" name="transfer_name" class="form-control" placeholder="ឧ. Sok Dara" required>
+                    </div>
+                    <div class="mb-3">
+                        <label>ផ្ទុករូបភស្តុតាង (រូបស្លីប ឬ QR)</label>
+                        <input type="file" name="proof_image" class="form-control" accept="image/*" required>
+                        <small class="text-muted">ទំហំអតិបរមា 5MB។ ប្រភេទដែលអាចប្រើបាន៖ PNG, JPG, JPEG, GIF, WEBP</small>
+                    </div>
+                    <button type="submit" class="btn btn-primary w-100">ដាក់ស្នើ</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

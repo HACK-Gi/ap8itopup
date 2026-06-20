@@ -1,0 +1,14 @@
+body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+.card {
+    border-radius: 10px;
+    overflow: hidden;
+    transition: transform 0.2s;
+}
+.card:hover {
+    transform: scale(1.02);
+}
+.badge {
+    font-size: 0.9rem;
+}

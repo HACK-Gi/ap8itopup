@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block title %}ផ្ទាំងគ្រប់គ្រង{% endblock %}
+{% block content %}
+<h2>សួស្ដី, {{ current_user.username }}!</h2>
+<div class="row mt-3">
+    <div class="col-md-4">
+        <div class="card text-white bg-success mb-3">
+            <div class="card-body">
+                <h5>សមតុល្យ</h5>
+                <h2>${{ "%.2f"|format(current_user.balance) }}</h2>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card text-white bg-info mb-3">
+            <div class="card-body">
+                <h5>API Key</h5>
+                <code>{{ current_user.api_key or 'មិនទាន់បង្កើត' }}</code>
+                {% if not current_user.api_key %}
+                <form method="POST" action="{{ url_for('generate_api_key') }}">
+                    <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+                    <button class="btn btn-light btn-sm mt-2">បង្កើត API Key</button>
+                </form>
+                {% else %}
+                <form method="POST" action="{{ url_for('reset_api_key') }}">
+                    <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+                    <button class="btn btn-warning btn-sm mt-2">កំណត់ឡើងវិញ</button>
+                </form>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card border-dark mb-3">
+            <div class="card-body">
+                <h5>សរុបការបញ្ជាទិញ</h5>
+                <h2>{{ total_orders }}</h2>
+            </div>
+        </div>
+    </div>
+</div>
+
+<h4 class="mt-4">ប្រវត្តិការដាក់ប្រាក់ថ្មីៗ</h4>
+<ul class="list-group">
+    {% for dep in deposits %}
+    <li class="list-group-item d-flex justify-content-between align-items-center">
+        #{{ dep.id }} - ${{ "%.2f"|format(dep.amount) }}
+        <span class="badge bg-{{ 'success' if dep.status=='accepted' else 'warning' }}">{{ dep.status }}</span>
+    </li>
+    {% endfor %}
+</ul>
+
+<h4 class="mt-4">ការបញ្ជាទិញថ្មីៗ</h4>
+<table class="table table-striped">
+    <thead><tr><th>ID</th><th>Game</th><th>Product</th><th>Price</th><th>Status</th></tr></thead>
+    <tbody>
+    {% for order in recent_orders %}
+    <tr>
+        <td>{{ order.id }}</td>
+        <td>{{ order.game }}</td>
+        <td>{{ order.product }}</td>
+        <td>${{ "%.2f"|format(order.price) }}</td>
+        <td><span class="badge bg-secondary">{{ order.status }}</span></td>
+    </tr>
+    {% endfor %}
+    </tbody>
+</table>
+{% endblock %}

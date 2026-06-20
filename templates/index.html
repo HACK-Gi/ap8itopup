@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}ទំព័រដើម{% endblock %}
+{% block content %}
+<h2 class="mb-4">📱 បញ្ជីសេវាទាំងអស់</h2>
+<div class="row">
+    {% for service in services %}
+    <div class="col-md-4 mb-3">
+        <div class="card border-primary h-100">
+            <div class="card-body">
+                <h5 class="card-title text-uppercase">{{ service.game }}</h5>
+                <p class="card-text">{{ service.product }}</p>
+                <h4 class="text-success">${{ "%.2f"|format(service.price) }}</h4>
+                {% if service.needs_server %}
+                <small class="text-muted">ត្រូវការ Server ID</small>
+                {% endif %}
+            </div>
+            <div class="card-footer bg-white">
+                <button class="btn btn-outline-primary btn-sm w-100" onclick="orderService('{{ service.game }}', '{{ service.product }}')">ទិញឥឡូវ</button>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+function orderService(game, product) {
+    // redirect to API doc or custom order page; here just alert
+    alert("សូមប្រើ API Key ដើម្បីបញ្ជាទិញ។ មើលឯកសារ API សម្រាប់ព័ត៌មានបន្ថែម។");
+}
+</script>
+{% endblock %}

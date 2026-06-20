@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}ប្រវត្តិការបញ្ជាទិញ{% endblock %}
+{% block content %}
+<h2>ប្រវត្តិការបញ្ជាទិញ</h2>
+<table class="table table-striped">
+    <thead>
+        <tr>
+            <th>ID</th>
+            <th>Game</th>
+            <th>Product</th>
+            <th>Price</th>
+            <th>UID</th>
+            <th>Server ID</th>
+            <th>Command</th>
+            <th>Status</th>
+            <th>Date</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for order in orders %}
+        <tr>
+            <td>{{ order.id }}</td>
+            <td>{{ order.game }}</td>
+            <td>{{ order.product }}</td>
+            <td>${{ "%.2f"|format(order.price) }}</td>
+            <td>{{ order.uid }}</td>
+            <td>{{ order.server_id or '' }}</td>
+            <td><code>{{ order.command }}</code></td>
+            <td><span class="badge bg-{{ 'success' if order.status=='completed' else 'warning' }}">{{ order.status }}</span></td>
+            <td>{{ order.created_at[:10] }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="9">មិនមានប្រវត្តិ</td></tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endblock %}
