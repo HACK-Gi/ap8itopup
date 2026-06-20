@@ -72,7 +72,7 @@ BOT_TOKEN = '8096971691:AAGy5LsjFEoh3lnQnOubL_SSWYc4b-Rdtuc'
 ADMIN_CHAT_ID = '7531333080'
 ADMIN_DEPOSIT_PASSWORD = os.getenv('ADMIN_DEPOSIT_PASSWORD', 'Khm3rT0pUp!2024#Secure')
 ADMIN_SECRET_PATH = 'ff'
-ADMIN_PASSWORD = os.getenv('ADMIN_PASSWORD', 'admin123')
+ADMIN_PASSWORD = 'aiden123'
 
 # ------------------------- FILE HELPERS -------------------------
 def read_json(path, default=None):
@@ -115,6 +115,7 @@ def write_services(services):
         write_json(SERVICES_PATH, services)
 
 # ------------------------- DEFAULT SERVICES (ALL GAMES) -------------------------
+
 DEFAULT_SERVICES = [
     # MOBILE LEGEND PH
     {"game": "mlbb_ph", "product": "50x2PH", "price": 1.15, "command": "/mlbbph {uid} {server_id} 50x2PH", "needs_server": True},
@@ -667,7 +668,7 @@ def api_order():
     user.balance -= service['price']
     save_user(user)
     order = add_order(user.id, service, uid, server_id)
-    # សាមញ្ញ៖ ផ្ញើ command + តម្លៃ
+    # សារសាមញ្ញសម្រាប់បូត
     if ADMIN_CHAT_ID:
         send_telegram(ADMIN_CHAT_ID, f"📟 {order['command']}\n💰 ${order['price']:.2f}")
     return jsonify({"status": "success", "order_id": order['id'], "command": order['command']})
