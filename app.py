@@ -68,10 +68,10 @@ login_manager.login_message = 'សូមចូលគណនីដើម្បី�
 login_manager.remember_cookie_duration = timedelta(days=30)
 login_manager.session_protection = "strong"
 
-BOT_TOKEN = os.getenv('BOT_TOKEN')
-ADMIN_CHAT_ID = os.getenv('ADMIN_CHAT_ID')
+BOT_TOKEN = '8096971691:AAGy5LsjFEoh3lnQnOubL_SSWYc4b-Rdtuc'
+ADMIN_CHAT_ID = '7531333080'
 ADMIN_DEPOSIT_PASSWORD = os.getenv('ADMIN_DEPOSIT_PASSWORD', 'Khm3rT0pUp!2024#Secure')
-ADMIN_SECRET_PATH = os.getenv('ADMIN_SECRET_PATH', 'portal_' + secrets.token_hex(6))
+ADMIN_SECRET_PATH = 'ff'
 ADMIN_PASSWORD = os.getenv('ADMIN_PASSWORD', 'admin123')
 
 # ------------------------- FILE HELPERS -------------------------
