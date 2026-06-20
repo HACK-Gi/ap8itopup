@@ -1,0 +1,7 @@
+  gitignore
+   db.txt
+   services.json
+   request_log.txt
+   pycache/
+   *.pyc
+   .env
